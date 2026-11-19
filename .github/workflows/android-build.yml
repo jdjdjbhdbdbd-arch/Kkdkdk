@@ -1,21 +1,37 @@
+
 name: Build APK
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Unzip project
+      - name: Find and unzip project
         run: |
-          unzip -o AstralEchoAndroid_CloudBuild.zip -d project
-          find project -name settings.gradle -o -name settings.gradle.kts
+          mkdir -p project
+
+          if [ -f "AstralEchoAndroid_Enhanced.zip" ]; then
+            ARCHIVE="AstralEchoAndroid_Enhanced.zip"
+          elif [ -f "AstralEchoAndroid_CloudBuild.zip" ]; then
+            ARCHIVE="AstralEchoAndroid_CloudBuild.zip"
+          else
+            echo "ERROR: Project ZIP archive not found!"
+            ls -la
+            exit 1
+          fi
+
+          echo "Using archive: $ARCHIVE"
+          unzip -q -o "$ARCHIVE" -d project
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -30,11 +46,28 @@ jobs:
 
       - name: Build APK
         run: |
-          PROJECT_DIR=$(dirname "$(find project -name settings.gradle -o -name settings.gradle.kts | head -n 1)")
-          gradle -p "$PROJECT_DIR" assembleDebug
+          SETTINGS=$(find project -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -print -quit)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERROR: settings.gradle not found!"
+            find project -maxdepth 4 -type f
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+          cd "$PROJECT_DIR"
+
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug
+          else
+            gradle assembleDebug
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: AstralEcho-APK
-          path: project/**/app/build/outputs/apk/debug/app-debug.apk
+          path: project/**/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          
